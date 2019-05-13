@@ -1,0 +1,149 @@
+# Use seaborn for pairplot
+# !pip install -q seaborn
+
+from __future__ import absolute_import, division, print_function
+
+# IMPORT plt, pd, sns, tf, keras, etc.
+import pathlib
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# IMPORT dataset
+dataset_path = keras.utils.get_file("auto-mpg.data", "https://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data")
+column_names = ['MPG','Cylinders','Displacement','Horsepower','Weight', 'Acceleration', 'Model Year', 'Origin'] 
+raw_dataset = pd.read_csv(dataset_path, names=column_names, na_values = "?", comment='\t', sep=" ", skipinitialspace=True)
+dataset = raw_dataset.copy()
+# dataset.tail()
+
+# CLEAN data
+dataset.isna().sum()  # the dataset contains a few unknown values
+dataset = dataset.dropna()  # drop the rows with unknown values (na)
+origin = dataset.pop('Origin')  # convert the categorical column 'Origin' into one-hot as follows
+dataset['USA'] = (origin == 1)*1.0
+dataset['Europe'] = (origin == 2)*1.0
+dataset['Japan'] = (origin == 3)*1.0
+# dataset.tail()
+
+# SPLIT the data set into training and test set
+train_dataset = dataset.sample(frac=0.8,random_state=0) # ratio 8:2 is used here
+test_dataset = dataset.drop(train_dataset.index)
+
+# INSPECT the data
+sns.pairplot(train_dataset[["MPG", "Cylinders", "Displacement", "Weight"]], diag_kind="kde")
+train_stats = train_dataset.describe()
+train_stats.pop("MPG")  # 'MPG' is a label, not a feature
+train_stats = train_stats.transpose()
+train_stats
+
+# SPLIT features from labels, the 'MPG' will be used as a label instead of a feature
+train_labels = train_dataset.pop('MPG')
+test_labels = test_dataset.pop('MPG')
+
+# NORMALIZA the data
+def norm(x):
+  return (x - train_stats['mean']) / train_stats['std']
+normed_train_data = norm(train_dataset)
+normed_test_data = norm(test_dataset)
+
+# BUILD the model
+def build_model():
+  # use a Sequential model with two (?) densely connected hidden layers, 
+  # and an output layer that returns a single, continuous value. 
+  model = keras.Sequential([
+    layers.Dense(64, activation=tf.nn.relu, input_shape=[len(train_dataset.keys())]),
+    layers.Dense(64, activation=tf.nn.relu),
+    layers.Dense(1)
+  ])
+  optimizer = tf.keras.optimizers.RMSprop(0.001)
+  model.compile(loss='mean_squared_error',
+                optimizer=optimizer,
+                metrics=['mean_absolute_error', 'mean_squared_error'])
+  return model
+  
+model = build_model()
+
+# inspect the model
+model.summary()
+example_batch = normed_train_data[:10]
+example_result = model.predict(example_batch)
+example_result
+
+# TRAIN the model: normal 
+class PrintDot(keras.callbacks.Callback):   # Display training progress by printing a single dot for each completed epoch
+  def on_epoch_end(self, epoch, logs):
+    if epoch % 100 == 0: print('')
+    print('.', end='')
+EPOCHS = 1000
+history = model.fit(
+  normed_train_data, train_labels,
+  epochs=EPOCHS, validation_split = 0.2, verbose=0,
+  callbacks=[PrintDot()])
+
+# visualize the training progess stored in 'history' class
+hist = pd.DataFrame(history.history)
+hist['epoch'] = history.epoch
+hist.tail()
+
+def plot_history(history):
+  hist = pd.DataFrame(history.history)
+  hist['epoch'] = history.epoch
+  # MAE for MPG
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Abs Error [MPG]')
+  plt.plot(hist['epoch'], hist['mean_absolute_error'], label='Train Error')
+  plt.plot(hist['epoch'], hist['val_mean_absolute_error'], label = 'Val Error')
+  plt.ylim([0,5])
+  plt.legend()
+  # MSE for MPG^2
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Square Error [$MPG^2$]')
+  plt.plot(hist['epoch'], hist['mean_squared_error'], label='Train Error')
+  plt.plot(hist['epoch'], hist['val_mean_squared_error'], label = 'Val Error')
+  plt.ylim([0,20])
+  plt.legend()
+  plt.show()
+plot_history(history)
+
+# TRAIN the model: EarlyStopping -> If a set amount of epochs elapses without showing improvement, then automatically stop the training.
+model = build_model()
+early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=10) 
+  # the patience parameter is the amount of epochs to check for improvement
+history = model.fit(normed_train_data, train_labels, epochs=EPOCHS,
+                    validation_split = 0.2, verbose=0, callbacks=[early_stop, PrintDot()])
+plot_history(history)
+
+# TEST the model
+loss, mae, mse = model.evaluate(normed_test_data, test_labels, verbose=0)
+print("Testing set Mean Abs Error: {:5.2f} MPG".format(mae))
+
+# PREDICT the data: regression?
+test_predictions = model.predict(normed_test_data).flatten()
+plt.scatter(test_labels, test_predictions)
+plt.xlabel('True Values [MPG]')
+plt.ylabel('Predictions [MPG]')
+plt.axis('equal')
+plt.axis('square')
+plt.xlim([0,plt.xlim()[1]])
+plt.ylim([0,plt.ylim()[1]])
+_ = plt.plot([-100, 100], [-100, 100])
+
+# PREDICT the data: error distribution
+error = test_predictions - test_labels
+plt.hist(error, bins = 25)
+plt.xlabel("Prediction Error [MPG]")
+_ = plt.ylabel("Count")
+
+# notes
+# MSE: Mean Squared Error (MSE) is a common loss function used for regression problems.
+# MAE: Mean Absolute Error (MAE) is a common regression metric.
+# When numeric input data features have values with different ranges, 
+  # each feature should be scaled independently to the same range.
+# If there is not much training data, one technique is to prefer a small network with few hidden layers to avoid overfitting.
+# Early stopping is a useful technique to prevent overfitting.
+
