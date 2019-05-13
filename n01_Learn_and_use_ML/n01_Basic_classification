@@ -1,0 +1,150 @@
+from __future__ import absolute_import, division, print_function
+
+# IMPORT TensorFlow and tf.keras
+import tensorflow as tf
+from tensorflow import keras
+
+# IMPORT Helper libraries
+import numpy as np
+import matplotlib.pyplot as plt
+
+# IMPORT fashion mnist dataset
+fashion_mnist = keras.datasets.fashion_mnist
+# IMPORT train set & test set
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+# MAP the labels [0, 9] for both training and testing set
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
+               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+               
+# explore the data set: display dimensions of datasets
+train_images.shape  # show dimension of train set:    60k*28*28
+len(train_labels)   # show dimension of train labels: 60k
+train_labels        # show labels: integer betwenn    [0, 9]
+test_images.shape   # show dimension of test set:     10k*28*28
+len(test_labels)    # show dimension of test labels:  10k
+
+# explore the data set: display one of the traning image
+plt.figure()
+plt.imshow(train_images[0])
+plt.colorbar()
+plt.grid(False)
+plt.show()
+
+# PREPROCESS the data set, both train and test sets in the SAME WAY
+train_images = train_images / 255.0   # rescale the train data from integer [0, 255] into float [0, 1]
+test_images = test_images / 255.0     # rescale the test data from integer [0, 255] into float [0, 1]
+
+# explore the data set: display the first 25 images from the training set and the class name below each image
+plt.figure(figsize=(10,10))
+for i in range(25):
+    plt.subplot(5,5,i+1)
+    plt.xticks([])
+    plt.yticks([])
+    plt.grid(False)                                   
+    plt.imshow(train_images[i], cmap=plt.cm.binary)
+    plt.xlabel(class_names[train_labels[i]])
+plt.show()
+
+# BUILD the model: step 1: set up layers
+model = keras.Sequential([
+    # 1st: Flatten: transforms the format of the images from a 2d-array (28*28) to a 1d-array (784*1), unstacking
+    keras.layers.Flatten(input_shape=(28, 28)),
+    # 2nd: Dense: 128 neurons, hidden
+    keras.layers.Dense(128, activation=tf.nn.relu),
+    # 3rd: Dense: 10 neurons, output
+    keras.layers.Dense(10, activation=tf.nn.softmax)
+])
+# In a densely/fully connected layer, each neuron receives input from every element of the previous layer
+# 784 (input) - 128 (hidden) - 10 (output, an array of 10 probability scores that sum to 1, the probability of each labels)
+
+# BUILD the model: step 2: compile the model
+model.compile(optimizer='adam', 
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+# optimizer:      This is how the model is updated based on the data it sees and its loss function.
+#   adam:
+# loss function:  This measures how accurate the model is during training. 
+#                 We want to minimize this function to "steer" the model in the right direction.
+#   sparse_categorical_crossentropy:
+# metrics :       Used to monitor the training and testing steps. 
+#                 The following example uses accuracy, the fraction of the images that are correctly classified.
+#   accuracy:
+
+# TRAIN the model using train set
+model.fit(train_images, train_labels, epochs=5)
+
+# EVALUATE the model on test set using accuracy 
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+# PREDICT using built model on data
+predictions = model.predict(test_images)
+
+# example
+predictions[0]              # model predictions (10 probabilities on each labels) on test data 0
+np.argmax(predictions[0])   # find the index of maximum probabilities for test data 0
+test_labels[0]              # check test label 0
+
+# further example
+def plot_image(i, predictions_array, true_label, img):
+  predictions_array, true_label, img = predictions_array[i], true_label[i], img[i]
+  plt.grid(False)
+  plt.xticks([])
+  plt.yticks([])
+    
+  plt.imshow(img, cmap=plt.cm.binary)
+
+  predicted_label = np.argmax(predictions_array)
+  if predicted_label == true_label:
+    color = 'blue'
+  else:
+    color = 'red'
+  
+  plt.xlabel("{} {:2.0f}% ({})".format(class_names[predicted_label],
+                                100*np.max(predictions_array),
+                                class_names[true_label]),
+                                color=color)
+
+def plot_value_array(i, predictions_array, true_label):
+  predictions_array, true_label = predictions_array[i], true_label[i]
+  plt.grid(False)
+  plt.xticks([])
+  plt.yticks([])
+  thisplot = plt.bar(range(10), predictions_array, color="#777777")
+  plt.ylim([0, 1]) 
+  predicted_label = np.argmax(predictions_array)
+ 
+  thisplot[predicted_label].set_color('red')
+  thisplot[true_label].set_color('blue')
+
+# check 0th image
+i = 0
+plt.figure(figsize=(6,3))
+plt.subplot(1,2,1)
+plot_image(i, predictions, test_labels, test_images)
+plt.subplot(1,2,2)
+plot_value_array(i, predictions,  test_labels)
+plt.show()
+
+# plot the first X test images, their predicted label, and the true label
+# color correct predictions in blue, incorrect predictions in red
+num_rows = 5
+num_cols = 3
+num_images = num_rows*num_cols
+plt.figure(figsize=(2*2*num_cols, 2*num_rows))
+for i in range(num_images):
+  plt.subplot(num_rows, 2*num_cols, 2*i+1)
+  plot_image(i, predictions, test_labels, test_images)
+  plt.subplot(num_rows, 2*num_cols, 2*i+2)
+  plot_value_array(i, predictions, test_labels)
+plt.show()
+
+# PREDICT using built model: <-- whats the difference between this prediction and the previous one?
+img = test_images[0]            # grab an image from the test dataset
+img = (np.expand_dims(img,0))   # add the image to a batch where it's the only member.
+predictions_single = model.predict(img)
+plot_value_array(0, predictions_single, test_labels)
+_ = plt.xticks(range(10), class_names, rotation=45)
+np.argmax(predictions_single[0])
+
